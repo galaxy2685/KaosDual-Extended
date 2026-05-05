@@ -363,6 +363,10 @@ static void core1_uart_rx(void) {
 
                 save = spin_lock_blocking(s_slot_lock);
                 slots_load(slot, payload + 1);
+                /* Mark as already-loaded so build_status doesn't generate a
+                 * duplicate arrival packet — we're sending it manually below */
+                g_was_loaded[slot] = true;
+                g_arrival_pending[slot] = false;
                 spin_unlock(s_slot_lock, save);
 
                 char dbg[16] = "LOAD:s";
