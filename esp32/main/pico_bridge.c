@@ -12,10 +12,17 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #include <string.h>
 #include <stdio.h>
 
 static const char *TAG = "PicoBridge";
+
+#define NVS_NAMESPACE "kaos"
+#define NVS_KEY_PTYPE "portal_type"
+
+static uint8_t s_portal_type = 2; /* default Traptanium */
 
 #define BRIDGE_UART     UART_NUM_2
 #define PIN_TX          17
@@ -149,14 +156,6 @@ void pico_bridge_unload(uint8_t slot) {
     send_frame(MSG_UNLOAD, &slot, 1);
     ESP_LOGI(TAG, "Sent UNLOAD slot %d to Pico", slot);
 }
-
-#include "nvs_flash.h"
-#include "nvs.h"
-
-#define NVS_NAMESPACE "kaos"
-#define NVS_KEY_PTYPE "portal_type"
-
-static uint8_t s_portal_type = 2; /* default Traptanium */
 
 uint8_t pico_bridge_get_portal_type(void) {
     return s_portal_type;
