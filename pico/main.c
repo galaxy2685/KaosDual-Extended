@@ -420,6 +420,9 @@ static void core1_uart_rx(void) {
                     memcpy(wb_data, g_slots[slot].data, SKYLANDER_DUMP_SIZE);
                 g_slots[slot].dirty = false;
                 slots_unload(slot);
+                g_was_loaded[slot]      = false;
+                g_arrival_pending[slot] = false;
+                g_removal_pending[slot] = false;
                 spin_unlock(s_slot_lock, save);
 
                 if (dirty) {
