@@ -11,7 +11,7 @@
 typedef struct {
     bool    loaded;
     bool    active;
-    bool    dirty;          /* game has written to this slot since last sync */
+    bool    dirty;
     uint8_t data[SKYLANDER_DUMP_SIZE];
     uint8_t uid[4];
 } slot_t;

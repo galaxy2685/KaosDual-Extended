@@ -7,7 +7,6 @@
  *   POST /api/load          {slot, file} — load a file into a slot
  *   POST /api/unload        {slot} — unload a slot
  *   POST /api/sense         Re-announce portal to game
- *   POST /api/portaltype    {type} — switch portal USB mode
  *   POST /api/upload        multipart/form-data file upload to SPIFFS
  *   GET  /api/download?slot=N  Download current slot data as .bin
  */
@@ -19,8 +18,6 @@
 #include "pico_bridge.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
-#include "nvs_flash.h"
-#include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -38,26 +35,6 @@ extern char g_file_list[64][64];
 extern void spiffs_full_path(const char *basename, char *out, size_t out_len);
 extern void scan_files(void);
 
-typedef enum {
-    PORTAL_TYPE_SSA         = 0,
-    PORTAL_TYPE_SWAP        = 1,
-    PORTAL_TYPE_TRAP        = 2,
-    PORTAL_TYPE_IMAGINATORS = 3
-} portal_type_t;
-
-static portal_type_t g_portal_type = PORTAL_TYPE_IMAGINATORS;
-
-/* Load saved portal type from NVS — called once at server start */
-void web_ui_load_portal_type(void) {
-    nvs_handle_t nvs;
-    if (nvs_open("kaos", NVS_READONLY, &nvs) == ESP_OK) {
-        uint8_t v = 3;
-        if (nvs_get_u8(nvs, "portal_type", &v) == ESP_OK && v <= 3)
-            g_portal_type = (portal_type_t)v;
-        nvs_close(nvs);
-    }
-    ESP_LOGI("WebUI", "Portal type loaded from NVS: %d", (int)g_portal_type);
-}
 
 /* -----------------------------------------------------------------------
  * HTML page — complete rewrite with clean JS architecture
@@ -115,9 +92,9 @@ static const char HTML_PAGE[] =
   "transition:border-color .3s}"
 ".card.loaded{border-color:var(--accent);"
   "box-shadow:0 0 20px rgba(109,40,217,.15)}"
-".card-hdr{display:flex;justify-content:space-between;align-items:center}"
-".lbl{font-size:.7rem;color:var(--muted);font-weight:600;letter-spacing:.1em;text-transform:uppercase}"
-".pnum{font-family:'Orbitron',monospace;font-size:.8rem;color:var(--accent2)}"
+".card-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}"
+".lbl{font-size:.75rem;color:var(--muted);font-weight:600;letter-spacing:.1em;text-transform:uppercase}"
+".pnum{font-family:'Orbitron',monospace;font-size:1.1rem;font-weight:700;color:var(--accent2);background:rgba(99,102,241,.15);padding:2px 8px;border-radius:6px}"
 
 /* Character display */
 ".char-info{text-align:center;padding:8px 0}"
@@ -187,23 +164,16 @@ static const char HTML_PAGE[] =
   "<p class='sub'>Skylander Portal Manager</p>"
 "</header>"
 
-/* Portal type */
-"<div class='pbar'>"
-  "<span class='pbar-label'>Portal type</span>"
-  "<select id='ptype' onchange='setPortalType(this.value)'>"
-    "<option value='3'>Imaginators / SuperChargers</option>"
-    "<option value='1'>Giants / Swap Force</option>"
-    "<option value='0'>Spyro's Adventure</option>"
-    "<option value='2'>Trap Team (Traptanium)</option>"
-  "</select>"
-  "<span class='pbadge' id='pbadge'>Imaginators</span>"
+/* Portal mode toggle */
+"<div style='text-align:center;margin-bottom:12px'>"
+  "<button id='btnMode' class='btn' onclick='toggleMode()' style='width:200px'>Mode: Traptanium</button>"
 "</div>"
 
 /* Slot cards — static structure, JS only updates inner content divs */
 "<div class='slots'>"
   "<div class='card' id='card0'>"
     "<div class='card-hdr'>"
-      "<span class='lbl'>Player 1</span><span class='pnum'>P1</span>"
+      "<span class='lbl'>Player 1 &nbsp;·&nbsp; Slot 0</span><span class='pnum'>P1</span>"
     "</div>"
     "<div id='info0'></div>"
     "<select class='file-sel' id='sel0'></select>"
@@ -212,7 +182,7 @@ static const char HTML_PAGE[] =
   "</div>"
   "<div class='card' id='card1'>"
     "<div class='card-hdr'>"
-      "<span class='lbl'>Player 2</span><span class='pnum'>P2</span>"
+      "<span class='lbl'>Player 2 &nbsp;·&nbsp; Slot 1</span><span class='pnum'>P2</span>"
     "</div>"
     "<div id='info1'></div>"
     "<select class='file-sel' id='sel1'></select>"
@@ -250,8 +220,7 @@ static const char HTML_PAGE[] =
 /* Single source of truth — never read from DOM to make decisions */
 "let files=[];"          /* string[] — current file list from server */
 "let slots=[{},{} ];"    /* slot state objects from server */
-"let portalType=3;"
-"let ptypeChanging=false;"
+/* Portal type state removed — hardcoded Traptanium */
 
 /* ── Render ────────────────────────────────────────────── */
 /* Called after every state fetch. Updates DOM to match state.
@@ -259,16 +228,29 @@ static const char HTML_PAGE[] =
  * Never destroys interactive elements — only updates their properties. */
 "let lastFileKey='';"
 
+"function greyOutDuplicates(){"
+  "if(portalMode!==2)return;" /* Generic mode — allow same character both slots */
+  "for(let i=0;i<2;i++){"
+    "const other=slots[1-i]||{};"
+    "const otherFile=other.loaded?other.filename:null;"
+    "const sel=document.getElementById('sel'+i);"
+    "if(!sel)continue;"
+    "for(const opt of sel.options){"
+      "opt.disabled=(otherFile&&opt.value===otherFile);"
+      "opt.style.color=opt.disabled?'#555':'';"
+    "}"
+  "}"
+"}"
+
 "function renderFiles(){"
   "const key=files.join('|');"
-  "if(key===lastFileKey)return;"  /* files unchanged — leave selects alone */
+  "if(key===lastFileKey)return;"
   "lastFileKey=key;"
   "for(let i=0;i<2;i++){"
     "const sel=document.getElementById('sel'+i);"
     "if(!sel)continue;"
-    "const cur=sel.value;"         /* preserve current selection */
+    "const cur=sel.value;"
     "sel.innerHTML=files.map(f=>'<option>'+f+'</option>').join('');"
-    /* restore selection if file still exists */
     "if(files.includes(cur))sel.value=cur;"
   "}"
 "}"
@@ -314,12 +296,18 @@ static const char HTML_PAGE[] =
   "}"
 "}"
 
-"function renderPortalType(){"
-  "if(ptypeChanging)return;"
-  "const el=document.getElementById('ptype');"
-  "if(el)el.value=portalType;"
-  "const badge=document.getElementById('pbadge');"
-  "if(badge)badge.textContent=PT[portalType]||'';"
+/* renderPortalType / setPortalType removed — Traptanium hardcoded */
+
+"var portalMode=2;" /* 0=Generic, 2=Traptanium (default) */
+"function updateModeBtn(){"
+  "document.getElementById('btnMode').textContent='Mode: '+(portalMode===2?'Traptanium':'Generic');"
+"}"
+"async function toggleMode(){"
+  "portalMode=(portalMode===2?0:2);"
+  "updateModeBtn();"
+  "await fetch('/api/portaltype',{method:'POST',"
+    "headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify({type:portalMode})});"
 "}"
 
 /* ── Fetch ─────────────────────────────────────────────── */
@@ -330,11 +318,12 @@ static const char HTML_PAGE[] =
     "const d=await r.json();"
     "files=d.files||[];"
     "slots=d.slots||[{},{}];"
-    "portalType=d.portal_type||3;"
+    "if(typeof d.ssa!=='undefined'){portalMode=d.ssa?0:2;updateModeBtn();}"
     "renderFiles();"
     "renderSlot(0);"
     "renderSlot(1);"
-    "renderPortalType();"
+    "greyOutDuplicates();"
+    "updateModeBtn();"
     "st('Connected',1);"
   "}catch(e){st('No connection',0)}"
 "}"
@@ -344,6 +333,10 @@ static const char HTML_PAGE[] =
   "const sel=document.getElementById('sel'+i);"
   "const file=sel?sel.value:'';"
   "if(!file){st('No file selected',0);return;}"
+  "if(portalMode===2){"
+    "const other=slots[1-i]||{};"
+    "if(other.loaded&&other.filename===file){st('Already loaded in other slot',0);return;}"
+  "}"
   "st('Loading...',1);"
   "try{"
     "const r=await fetch('/api/load',{method:'POST',"
@@ -405,17 +398,7 @@ static const char HTML_PAGE[] =
   "}catch(e){st('Error',0)}"
 "}"
 
-"async function setPortalType(v){"
-  "ptypeChanging=true;"
-  "const badge=document.getElementById('pbadge');"
-  "if(badge)badge.textContent=PT[parseInt(v)]||'';"
-  "try{"
-    "await fetch('/api/portaltype',{method:'POST',"
-      "headers:{'Content-Type':'application/json'},body:JSON.stringify({type:parseInt(v)})});"
-    "st('Portal type saved — unplug & replug Pico',1);"
-  "}catch(e){st('Error',0)}"
-  "setTimeout(()=>ptypeChanging=false,5000);"
-"}"
+"async function setPortalType(v){/* removed - Traptanium hardcoded */}"
 
 "function st(m,ok){"
   "document.getElementById('stxt').textContent=m;"
@@ -490,7 +473,7 @@ static esp_err_t handle_state(httpd_req_t *req) {
         }
     }
 
-    n += snprintf(buf+n, sizeof(buf)-n, "],\"portal_type\":%d}", (int)g_portal_type);
+    n += snprintf(buf+n, sizeof(buf)-n, "]}");
     xSemaphoreGive(g_sky_mutex);
 
     httpd_resp_set_type(req, "application/json");
@@ -625,7 +608,14 @@ static esp_err_t handle_portaltype(httpd_req_t *req) {
     if (pt) {
         int t = atoi(pt + 7);
         if (t >= 0 && t <= 3) {
-            g_portal_type = (portal_type_t)t;
+            /* Unload both slots first — Pico will reboot and lose state */
+            xSemaphoreTake(g_sky_mutex, portMAX_DELAY);
+            skylander_unload(0);
+            skylander_unload(1);
+            xSemaphoreGive(g_sky_mutex);
+            pico_bridge_unload(0);
+            pico_bridge_unload(1);
+            vTaskDelay(pdMS_TO_TICKS(100));
             pico_bridge_set_portal_type((uint8_t)t);
             ESP_LOGI(TAG, "Portal type → %d", t);
         }
