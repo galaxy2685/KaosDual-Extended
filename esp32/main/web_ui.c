@@ -318,7 +318,7 @@ static const char HTML_PAGE[] =
     "const d=await r.json();"
     "files=d.files||[];"
     "slots=d.slots||[{},{}];"
-    "if(typeof d.ssa!=='undefined'){portalMode=d.ssa?0:2;updateModeBtn();}"
+    "if(typeof d.portal_type!=='undefined'){portalMode=d.portal_type;updateModeBtn();}"
     "renderFiles();"
     "renderSlot(0);"
     "renderSlot(1);"
@@ -473,7 +473,7 @@ static esp_err_t handle_state(httpd_req_t *req) {
         }
     }
 
-    n += snprintf(buf+n, sizeof(buf)-n, "]}");
+    n += snprintf(buf+n, sizeof(buf)-n, "],\"portal_type\":%d}", pico_bridge_get_portal_type());
     xSemaphoreGive(g_sky_mutex);
 
     httpd_resp_set_type(req, "application/json");
