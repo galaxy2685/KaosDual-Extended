@@ -49,7 +49,7 @@ Your phone or browser
 | GPIO16 | GPIO4 | RX ← TX |
 | GND    | GND  | Ground  |
 
-Both boards run at 3.3V — no level shifting needed.
+Both boards run at 5V — no level shifting needed.
 
 <img width="1920" height="1080" alt="KaosDualDiagram" src="https://github.com/user-attachments/assets/3083ad40-4919-4aa9-a266-54dcbb42415d" />
 
