@@ -143,7 +143,64 @@ static void pico_debug(const char *msg) {
     uart_write_blocking(KAOS_UART, frame, n);
 }
 
+/* Short UART-visible dump markers for write-back diagnosis. */
+static void pico_debug_dump_edge(const char *prefix, const uint8_t *data) {
+    char msg[40];
+    static const char hex[] = "0123456789ABCDEF";
+    int pos = 0;
+    while (prefix[pos] && pos < 6) {
+        msg[pos] = prefix[pos];
+        pos++;
+    }
+    for (int i = 0; i < 16 && pos + 2 < (int)sizeof(msg); i++) {
+        msg[pos++] = hex[data[i] >> 4];
+        msg[pos++] = hex[data[i] & 0x0F];
+    }
+    msg[pos] = '\0';
+    pico_debug(msg);
+}
+
 static volatile uint32_t g_last_write_ms[MAX_SLOTS] = {0};
+
+/*
+ * The portal protocol identifies a figure with a bank in the high nibble
+ * and its physical portal slot in the low nibble.  Project Kaos accepts all
+ * banks (0x10, 0x20, 0x30, ...); games use more than one bank while reading
+ * a fully initialised/saved figure.  Do not treat the bank as part of the
+ * slot number.
+ */
+static uint8_t slot_from_figure_index(uint8_t figure_index) {
+    return figure_index & 0x0F;
+}
+
+/* Report every changed block before serialising a write-back.  A changed
+ * block without a corresponding HID W is evidence of Pico-side corruption. */
+static void audit_writeback(uint8_t slot, const uint8_t *dump) {
+    uint64_t changed = 0;
+    uint64_t game_writes = 0;
+
+    uint32_t save = spin_lock_blocking(s_slot_lock);
+    if (slot < MAX_SLOTS) {
+        for (uint8_t block = 0; block < SKYLANDER_DUMP_SIZE / 16; block++) {
+            size_t offset = (size_t)block * 16;
+            if (memcmp(dump + offset, g_slots[slot].original_data + offset, 16) != 0) {
+                changed |= (1ull << block);
+                if (g_slots[slot].game_wrote_block[block]) game_writes |= (1ull << block);
+            }
+        }
+    }
+    spin_unlock(s_slot_lock, save);
+
+    for (uint8_t block = 0; block < SKYLANDER_DUMP_SIZE / 16; block++) {
+        if (!(changed & (1ull << block))) continue;
+        char dbg[16] = "AUD:s0,b00,W";
+        dbg[5] = '0' + slot;
+        dbg[8] = "0123456789ABCDEF"[block >> 4];
+        dbg[9] = "0123456789ABCDEF"[block & 0x0F];
+        dbg[11] = (game_writes & (1ull << block)) ? 'W' : 'R';
+        pico_debug(dbg);
+    }
+}
 
 /* -----------------------------------------------------------------------
  * HID command handler
@@ -202,11 +259,7 @@ static void handle_command(const uint8_t *cmd) {
         {
             uint8_t raw_idx = cmd[1];
             uint8_t blk     = cmd[2];
-            /* Accept 0x10-based (older games) and 0x20-based (Trap Team) */
-            uint8_t slot;
-            if      (raw_idx >= 0x20) slot = raw_idx - 0x20;
-            else if (raw_idx >= 0x10) slot = raw_idx - 0x10;
-            else                      slot = raw_idx;
+            uint8_t slot = slot_from_figure_index(raw_idx);
 
             if (blk == 0) {
                 char d[12] = "Q:0x";
@@ -237,20 +290,27 @@ static void handle_command(const uint8_t *cmd) {
         {
             uint8_t raw_idx = cmd[1];
             uint8_t blk     = cmd[2];
-            uint8_t slot;
-            if      (raw_idx >= 0x20) slot = raw_idx - 0x20;
-            else if (raw_idx >= 0x10) slot = raw_idx - 0x10;
-            else                      slot = raw_idx;
+            uint8_t slot = slot_from_figure_index(raw_idx);
 
             resp[0] = 'W';
-            resp[1] = 0x00;
+            /* Match Project Kaos: acknowledge the physical slot as 0x10+s
+             * and echo the complete 16-byte write payload. */
+            resp[1] = (uint8_t)(0x10 | slot);
             resp[2] = blk;
+            memcpy(&resp[3], &cmd[3], 16);
 
-            uint32_t save = spin_lock_blocking(s_slot_lock);
-            slots_write_block(slot, blk, &cmd[3]);
-            g_slots[slot].dirty = true;
-            spin_unlock(s_slot_lock, save);
-            g_last_write_ms[slot] = to_ms_since_boot(get_absolute_time());
+            if (slot < MAX_SLOTS && blk < (SKYLANDER_DUMP_SIZE / 16)) {
+                uint32_t save = spin_lock_blocking(s_slot_lock);
+                slots_write_block(slot, blk, &cmd[3]);
+                spin_unlock(s_slot_lock, save);
+                g_last_write_ms[slot] = to_ms_since_boot(get_absolute_time());
+
+                char dbg[16] = "W:s0,b00";
+                dbg[3] = '0' + slot;
+                dbg[6] = "0123456789ABCDEF"[blk >> 4];
+                dbg[7] = "0123456789ABCDEF"[blk & 0x0F];
+                pico_debug(dbg);
+            }
         }
         break;
 
@@ -328,6 +388,10 @@ static void core1_uart_rx(void) {
         case MSG_LOAD:
             if (len >= 1 + SKYLANDER_DUMP_SIZE) {
                 uint8_t slot = payload[0];
+                if (slot >= MAX_SLOTS) {
+                    pico_debug("LOAD:BAD_SLOT");
+                    break;
+                }
 
                 /* If replacing a loaded slot, signal removal first */
                 uint32_t save = spin_lock_blocking(s_slot_lock);
@@ -415,6 +479,10 @@ static void core1_uart_rx(void) {
         case MSG_UNLOAD:
             if (len >= 1) {
                 uint8_t slot = payload[0];
+                if (slot >= MAX_SLOTS) {
+                    pico_debug("UNLOAD:BAD_SLOT");
+                    break;
+                }
 
                 /* Flush dirty write-back before unloading */
                 uint32_t save = spin_lock_blocking(s_slot_lock);
@@ -423,10 +491,6 @@ static void core1_uart_rx(void) {
                 if (dirty && slot < MAX_SLOTS)
                     memcpy(wb_data, g_slots[slot].data, SKYLANDER_DUMP_SIZE);
                 g_slots[slot].dirty = false;
-                slots_unload(slot);
-                g_was_loaded[slot]      = false;
-                g_arrival_pending[slot] = false;
-                g_removal_pending[slot] = false;
                 spin_unlock(s_slot_lock, save);
 
                 if (dirty) {
@@ -436,9 +500,27 @@ static void core1_uart_rx(void) {
                     static uint8_t frame[SKYLANDER_DUMP_SIZE + 8];
                     int n = kaos_build_frame(frame, MSG_WRITE_BACK, wb_buf,
                                              1 + SKYLANDER_DUMP_SIZE);
+                    audit_writeback(slot, wb_data);
+                    pico_debug_dump_edge("WBUH:", wb_data);
+                    pico_debug_dump_edge("WBUT:", wb_data + SKYLANDER_DUMP_SIZE - 16);
                     uart_write_blocking(KAOS_UART, frame, n);
-                    pico_debug("WB:unload");
+                    char dbg[20] = "WB:unload,s0,n0000";
+                    dbg[11] = '0' + slot;
+                    dbg[14] = "0123456789ABCDEF"[(n >> 12) & 0x0F];
+                    dbg[15] = "0123456789ABCDEF"[(n >> 8) & 0x0F];
+                    dbg[16] = "0123456789ABCDEF"[(n >> 4) & 0x0F];
+                    dbg[17] = "0123456789ABCDEF"[n & 0x0F];
+                    pico_debug(dbg);
                 }
+
+                /* Keep the load baseline alive until the audit above has
+                 * compared it with wb_data, then retire the slot. */
+                save = spin_lock_blocking(s_slot_lock);
+                slots_unload(slot);
+                g_was_loaded[slot]      = false;
+                g_arrival_pending[slot] = false;
+                g_removal_pending[slot] = false;
+                spin_unlock(s_slot_lock, save);
             }
             break;
 
@@ -518,8 +600,17 @@ int main(void) {
                     static uint8_t frame[SKYLANDER_DUMP_SIZE + 8];
                     int n = kaos_build_frame(frame, MSG_WRITE_BACK, wb_buf,
                                              1 + SKYLANDER_DUMP_SIZE);
+                    audit_writeback((uint8_t)si, wb_buf + 1);
+                    pico_debug_dump_edge("WBH:", wb_buf + 1);
+                    pico_debug_dump_edge("WBT:", wb_buf + 1 + SKYLANDER_DUMP_SIZE - 16);
                     uart_write_blocking(KAOS_UART, frame, n);
-                    pico_debug("WB:done");
+                    char dbg[20] = "WB:done,s0,n0000";
+                    dbg[9]  = '0' + si;
+                    dbg[12] = "0123456789ABCDEF"[(n >> 12) & 0x0F];
+                    dbg[13] = "0123456789ABCDEF"[(n >> 8) & 0x0F];
+                    dbg[14] = "0123456789ABCDEF"[(n >> 4) & 0x0F];
+                    dbg[15] = "0123456789ABCDEF"[n & 0x0F];
+                    pico_debug(dbg);
                 }
             }
         }

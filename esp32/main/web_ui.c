@@ -13,7 +13,6 @@
 
 #include "web_ui.h"
 #include "Skylander.h"
-#include "SkylanderCrypt.h"
 #include "skylander_ids.h"
 #include "pico_bridge.h"
 #include "esp_log.h"
@@ -23,11 +22,32 @@
 #include "freertos/task.h"
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include <dirent.h>
 
 static const char *TAG = "WebUI";
 
 #define SPIFFS_MOUNT "/spiffs"
+
+/* Export diagnostics.  CRC32 is calculated over the binary body only; it
+ * does not include HTTP headers or any text representation. */
+static uint32_t dump_crc32(const uint8_t *data, size_t len) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; bit++)
+            crc = (crc >> 1) ^ ((crc & 1) ? 0xEDB88320u : 0);
+    }
+    return ~crc;
+}
+
+static void log_download_dump(const char *stage, const uint8_t *data) {
+    ESP_LOGI(TAG, "%s: bytes=%u crc32=%08" PRIX32, stage,
+             SKYLANDER_DUMP_SIZE, dump_crc32(data, SKYLANDER_DUMP_SIZE));
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, data, 16, ESP_LOG_INFO);
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, data + SKYLANDER_DUMP_SIZE - 16, 16,
+                             ESP_LOG_INFO);
+}
 
 extern SemaphoreHandle_t g_sky_mutex;
 extern int  g_file_count;
@@ -752,7 +772,7 @@ static esp_err_t handle_upload(httpd_req_t *req) {
 
 /* -----------------------------------------------------------------------
  * GET /api/download?slot=N
- * Returns the current slot data re-encrypted as a .bin download
+ * Returns the exact raw 1024-byte dump currently stored in SPIFFS.
  * ----------------------------------------------------------------------- */
 static esp_err_t handle_download(httpd_req_t *req) {
     /* Parse slot from query string */
@@ -776,10 +796,26 @@ static esp_err_t handle_download(httpd_req_t *req) {
         return ESP_OK;
     }
 
-    /* Re-encrypt the current in-memory decrypted data */
-    static uint8_t enc[SKYLANDER_DUMP_SIZE];
-    memcpy(enc, g_skylanders[slot].data, SKYLANDER_DUMP_SIZE);
-    encrypt_skylander(enc, g_skylanders[slot].uid);
+    /* The SPIFFS file is the authoritative raw tag image.  Do not use the
+     * decrypted metadata cache and do not encrypt/decrypt on export. */
+    static uint8_t raw[SKYLANDER_DUMP_SIZE];
+    FILE *f = fopen(g_skylanders[slot].filename, "rb");
+    if (!f) {
+        ESP_LOGE(TAG, "Download cannot open %s", g_skylanders[slot].filename);
+        xSemaphoreGive(g_sky_mutex);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Cannot read dump");
+        return ESP_FAIL;
+    }
+    size_t nread = fread(raw, 1, sizeof(raw), f);
+    fclose(f);
+    if (nread != sizeof(raw)) {
+        ESP_LOGE(TAG, "Download read %u/%u bytes from %s", (unsigned)nread,
+                 SKYLANDER_DUMP_SIZE, g_skylanders[slot].filename);
+        xSemaphoreGive(g_sky_mutex);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Dump is not 1024 bytes");
+        return ESP_FAIL;
+    }
+    log_download_dump("Download SPIFFS read", raw);
 
     /* Build a download filename */
     const char *base = strrchr(g_skylanders[slot].filename, '/');
@@ -791,8 +827,11 @@ static esp_err_t handle_download(httpd_req_t *req) {
 
     httpd_resp_set_type(req, "application/octet-stream");
     httpd_resp_set_hdr(req, "Content-Disposition", cdispo);
-    httpd_resp_send(req, (const char *)enc, SKYLANDER_DUMP_SIZE);
-    return ESP_OK;
+    log_download_dump("Download HTTP body", raw);
+    esp_err_t send_rc = httpd_resp_send(req, (const char *)raw, sizeof(raw));
+    ESP_LOGI(TAG, "Download HTTP send: bytes=%u result=%s", SKYLANDER_DUMP_SIZE,
+             esp_err_to_name(send_rc));
+    return send_rc;
 }
 
 /* -----------------------------------------------------------------------

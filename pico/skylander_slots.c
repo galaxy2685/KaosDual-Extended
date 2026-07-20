@@ -8,6 +8,8 @@ void slots_load(uint8_t slot, const uint8_t *dump) {
     if (slot >= MAX_SLOTS) return;
     slot_t *s = &g_slots[slot];
     memcpy(s->data, dump, SKYLANDER_DUMP_SIZE);
+    memcpy(s->original_data, dump, SKYLANDER_DUMP_SIZE);
+    memset(s->game_wrote_block, 0, sizeof(s->game_wrote_block));
     memcpy(s->uid, dump, 4);
     s->loaded = true;
     s->active = true;
@@ -36,5 +38,6 @@ void slots_write_block(uint8_t slot, uint8_t block, const uint8_t *data) {
     if (slot >= MAX_SLOTS || !g_slots[slot].loaded) return;
     if (block >= SKYLANDER_DUMP_SIZE / 16) return;
     memcpy(&g_slots[slot].data[block * 16], data, 16);
+    g_slots[slot].game_wrote_block[block] = true;
     g_slots[slot].dirty = true;
 }

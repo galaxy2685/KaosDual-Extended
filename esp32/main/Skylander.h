@@ -12,6 +12,8 @@ typedef struct {
     bool    loaded;
     bool    active;
     uint8_t data[SKYLANDER_DUMP_SIZE];
+    /* Original raw bytes used for UART write-back auditing. */
+    uint8_t raw_data[SKYLANDER_DUMP_SIZE];
     uint8_t uid[4];
     char    filename[256];
 } skylander_slot_t;

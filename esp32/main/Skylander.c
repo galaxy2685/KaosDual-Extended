@@ -19,6 +19,7 @@ bool skylander_load(uint8_t slot, const char *path) {
     fclose(f);
     if (n == 0) { ESP_LOGE(TAG, "Empty file: %s", path); return false; }
 
+    memcpy(sky->raw_data, sky->data, SKYLANDER_DUMP_SIZE);
     memcpy(sky->uid, sky->data, 4);
     decrypt_skylander(sky->data, sky->uid);
     strncpy(sky->filename, path, sizeof(sky->filename)-1);

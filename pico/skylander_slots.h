@@ -13,6 +13,9 @@ typedef struct {
     bool    active;
     bool    dirty;
     uint8_t data[SKYLANDER_DUMP_SIZE];
+    /* Raw dump at load time.  Used only to audit write-back fidelity. */
+    uint8_t original_data[SKYLANDER_DUMP_SIZE];
+    bool    game_wrote_block[SKYLANDER_DUMP_SIZE / 16];
     uint8_t uid[4];
 } slot_t;
 

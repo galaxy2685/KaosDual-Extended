@@ -16,6 +16,8 @@
 #include "nvs.h"
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
+#include <sys/stat.h>
 
 static const char *TAG = "PicoBridge";
 
@@ -31,6 +33,23 @@ static uint8_t s_portal_type = 2; /* default Traptanium */
 extern SemaphoreHandle_t g_sky_mutex;
 
 static bool s_pico_ready = false;
+
+static void log_dump_edges(const char *label, const uint8_t *dump) {
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, dump, 16, ESP_LOG_INFO);
+    ESP_LOG_BUFFER_HEX_LEVEL(TAG, dump + SKYLANDER_DUMP_SIZE - 16, 16,
+                             ESP_LOG_INFO);
+    ESP_LOGI(TAG, "%s dump edges logged", label);
+}
+
+static void log_changed_blocks(uint8_t slot, const uint8_t *before,
+                               const uint8_t *after) {
+    for (uint8_t block = 0; block < SKYLANDER_DUMP_SIZE / 16; block++) {
+        size_t offset = (size_t)block * 16;
+        if (memcmp(before + offset, after + offset, 16) != 0) {
+            ESP_LOGI(TAG, "WRITE_BACK slot %u changed block %02X", slot, block);
+        }
+    }
+}
 
 /* -----------------------------------------------------------------------
  * Send a framed message to the Pico
@@ -66,8 +85,14 @@ static void rx_task(void *arg) {
                 break;
 
             case MSG_WRITE_BACK: {
-                if (len < 1 + SKYLANDER_DUMP_SIZE) break;
+                ESP_LOGI(TAG, "WRITE_BACK received: payload=%u", (unsigned)len);
+                if (len != 1 + SKYLANDER_DUMP_SIZE) {
+                    ESP_LOGE(TAG, "WRITE_BACK rejected: expected %u bytes",
+                             1 + SKYLANDER_DUMP_SIZE);
+                    break;
+                }
                 uint8_t slot = payload[0];
+                log_dump_edges("WRITE_BACK RX", payload + 1);
 
                 xSemaphoreTake(g_sky_mutex, portMAX_DELAY);
                 if (slot < 2 && g_skylanders[slot].loaded) {
@@ -77,15 +102,38 @@ static void rx_task(void *arg) {
                     memcpy(wb_uid, payload + 1, 4);
                     bool uid_match = (memcmp(wb_uid, g_skylanders[slot].uid, 4) == 0);
                     if (uid_match) {
-                        FILE *f = fopen(g_skylanders[slot].filename, "wb");
+                        log_changed_blocks(slot, g_skylanders[slot].raw_data,
+                                           payload + 1);
+                        ESP_LOGI(TAG, "Saving slot %d to %s", slot,
+                                 g_skylanders[slot].filename);
+                        /* The dump was opened successfully when it was loaded.
+                         * Do not truncate it before we know the UART write-back
+                         * can be written completely. */
+                        FILE *f = fopen(g_skylanders[slot].filename, "r+b");
                         if (f) {
-                            fwrite(payload + 1, 1, SKYLANDER_DUMP_SIZE, f);
-                            fclose(f);
-                            ESP_LOGI(TAG, "Saved slot %d → %s", slot,
-                                     g_skylanders[slot].filename);
+                            size_t written = fwrite(payload + 1, 1,
+                                                    SKYLANDER_DUMP_SIZE, f);
+                            int flush_rc = fflush(f);
+                            int close_rc = fclose(f);
+                            struct stat st;
+                            int stat_rc = stat(g_skylanders[slot].filename, &st);
+                            ESP_LOGI(TAG,
+                                     "Save slot %d: fwrite=%u/%u fflush=%d fclose=%d size=%ld",
+                                     slot, (unsigned)written,
+                                     SKYLANDER_DUMP_SIZE, flush_rc, close_rc,
+                                     (stat_rc == 0) ? (long)st.st_size : -1L);
+                            if (written != SKYLANDER_DUMP_SIZE || flush_rc != 0 ||
+                                close_rc != 0 || stat_rc != 0 ||
+                                st.st_size != SKYLANDER_DUMP_SIZE) {
+                                ESP_LOGE(TAG, "Save failed (errno=%d)", errno);
+                            } else {
+                                memcpy(g_skylanders[slot].raw_data, payload + 1,
+                                       SKYLANDER_DUMP_SIZE);
+                                ESP_LOGI(TAG, "Saved slot %d", slot);
+                            }
                         } else {
-                            ESP_LOGE(TAG, "Cannot open for write: %s",
-                                     g_skylanders[slot].filename);
+                            ESP_LOGE(TAG, "Cannot open for write: %s (errno=%d)",
+                                     g_skylanders[slot].filename, errno);
                         }
                     } else {
                         ESP_LOGW(TAG, "Slot %d write-back UID mismatch — discarded", slot);
