@@ -4,6 +4,8 @@ idf_component_register(
         "Skylander.c"
         "SkylanderCrypt.c"
         "rijndael.c"
+        "sky_editor.c"
+        "library.c"
         "web_ui.c"
         "pico_bridge.c"
     INCLUDE_DIRS
@@ -17,5 +19,6 @@ idf_component_register(
         esp_wifi
         esp_netif
         esp_http_server
+        mbedtls
         nvs_flash
 )

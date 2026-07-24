@@ -1,4 +1,4 @@
-name: Build KAOS Firmware
+name: Build KaosDual Extended Firmware
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kaos-pico-firmware
+          name: kaosdual-extended-pico-firmware
           path: pico/build/kaos_pico.uf2
           if-no-files-found: error
 
@@ -82,7 +82,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kaos-rp2040-zero-firmware
+          name: kaosdual-extended-rp2040-zero-firmware
           path: pico/build/kaos_rp2040_zero.uf2
           if-no-files-found: error
 
@@ -105,11 +105,12 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kaos-esp32-firmware
+          name: kaosdual-extended-esp32-firmware
           path: |
             esp32/build/kaos_esp32_dual.bin
             esp32/build/bootloader/bootloader.bin
             esp32/build/partition_table/partition-table.bin
+            esp32/build/spiffs.bin
             esp32/build/flash_args
           if-no-files-found: error
 
@@ -125,24 +126,24 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: kaos-pico-firmware
+          name: kaosdual-extended-pico-firmware
           path: bundle/pico
 
       - uses: actions/download-artifact@v4
         with:
-          name: kaos-rp2040-zero-firmware
+          name: kaosdual-extended-rp2040-zero-firmware
           path: bundle/rp2040-zero
 
       - uses: actions/download-artifact@v4
         with:
-          name: kaos-esp32-firmware
+          name: kaosdual-extended-esp32-firmware
           path: bundle/esp32
 
       - name: Write flash instructions
         run: |
           cat > bundle/HOW_TO_FLASH.txt << 'INSTEOF'
           ╔══════════════════════════════════════════════════╗
-          ║           KAOS Dual Firmware Bundle              ║
+          ║       KaosDual Extended Firmware Bundle          ║
           ╚══════════════════════════════════════════════════╝
 
           ── RP2040 Boards (Pi Pico or RP2040 Zero) ─────────
@@ -163,7 +164,8 @@ jobs:
             write_flash \
             0x1000  esp32/bootloader.bin \
             0x8000  esp32/partition-table.bin \
-            0x10000 esp32/kaos_esp32_dual.bin
+            0x10000 esp32/kaos_esp32_dual.bin \
+            0x190000 esp32/spiffs.bin
 
           (Replace COM3 with your port)
 
@@ -182,6 +184,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: kaos-firmware-bundle
+          name: kaosdual-extended-firmware-bundle
           path: bundle/
           if-no-files-found: error

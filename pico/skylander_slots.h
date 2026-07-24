@@ -6,7 +6,10 @@
 #include <stdbool.h>
 #include "kaos_protocol.h"
 
-#define MAX_SLOTS 2
+/* The portal protocol and status report can represent four physical slots.
+ * KaosDual currently exposes only slots 0-2 from the ESP32, leaving slot 3
+ * unused until a future P4 feature is deliberately enabled. */
+#define MAX_SLOTS 4
 
 typedef struct {
     bool    loaded;

@@ -95,7 +95,7 @@ static void rx_task(void *arg) {
                 log_dump_edges("WRITE_BACK RX", payload + 1);
 
                 xSemaphoreTake(g_sky_mutex, portMAX_DELAY);
-                if (slot < 2 && g_skylanders[slot].loaded) {
+                if (slot < PORTAL_SLOT_ENABLED_COUNT && g_skylanders[slot].loaded) {
                     /* Verify UID in write-back matches currently loaded file
                      * to prevent stale write-back from overwriting wrong file */
                     uint8_t wb_uid[4];
@@ -104,7 +104,7 @@ static void rx_task(void *arg) {
                     if (uid_match) {
                         log_changed_blocks(slot, g_skylanders[slot].raw_data,
                                            payload + 1);
-                        ESP_LOGI(TAG, "Saving slot %d to %s", slot,
+                        ESP_LOGI(TAG, "writeback slot=%u file=%s", (unsigned)(slot + 1),
                                  g_skylanders[slot].filename);
                         /* The dump was opened successfully when it was loaded.
                          * Do not truncate it before we know the UART write-back

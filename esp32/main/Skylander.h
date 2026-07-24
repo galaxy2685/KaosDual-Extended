@@ -6,7 +6,10 @@
 #include <stdbool.h>
 #include "SkylanderCrypt.h"
 
-#define MAX_SKYLANDERS  2
+/* The Pico and ESP32 share four physical portal positions. */
+#define PORTAL_SLOT_CAPACITY      4
+#define PORTAL_SLOT_ENABLED_COUNT 4
+#define MAX_SKYLANDERS PORTAL_SLOT_CAPACITY
 
 typedef struct {
     bool    loaded;
@@ -25,5 +28,9 @@ void    skylander_unload(uint8_t slot);
 uint8_t skylander_get_portal_status(void);
 uint8_t *skylander_get_block(uint8_t slot, uint8_t block);
 void    skylander_write_block(uint8_t slot, uint8_t block, const uint8_t *data);
+
+/* The authoritative loaded-file association used by writeback and all file
+ * replacement/removal protections. slot_out receives the zero-based slot. */
+bool skylander_path_loaded_in_any_enabled_slot(const char *path, int *slot_out);
 
 #endif

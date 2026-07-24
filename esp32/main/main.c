@@ -27,6 +27,7 @@
 #include "esp_spiffs.h"
 
 #include "Skylander.h"
+#include "library.h"
 #include "web_ui.h"
 #include "pico_bridge.h"
 
@@ -231,6 +232,7 @@ void app_main(void) {
     /* SPIFFS — mounts internal flash partition */
     spiffs_init();
     scan_files();
+    if (!library_init()) ESP_LOGW(TAG, "Skylander library index unavailable");
 
     /* Pico bridge (UART2) */
     pico_bridge_init();

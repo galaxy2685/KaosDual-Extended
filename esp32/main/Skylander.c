@@ -9,7 +9,7 @@ static const char *TAG = "Skylander";
 skylander_slot_t g_skylanders[MAX_SKYLANDERS] = {0};
 
 bool skylander_load(uint8_t slot, const char *path) {
-    if (slot >= MAX_SKYLANDERS) return false;
+    if (slot >= PORTAL_SLOT_ENABLED_COUNT) return false;
     FILE *f = fopen(path, "rb");
     if (!f) { ESP_LOGE(TAG, "Cannot open: %s", path); return false; }
 
@@ -32,26 +32,39 @@ bool skylander_load(uint8_t slot, const char *path) {
 }
 
 void skylander_unload(uint8_t slot) {
-    if (slot >= MAX_SKYLANDERS) return;
+    if (slot >= PORTAL_SLOT_ENABLED_COUNT) return;
     memset(&g_skylanders[slot], 0, sizeof(skylander_slot_t));
     ESP_LOGI(TAG, "Slot %d unloaded", slot);
 }
 
 uint8_t skylander_get_portal_status(void) {
     uint8_t s = 0;
-    for (int i = 0; i < MAX_SKYLANDERS; i++)
+    for (int i = 0; i < PORTAL_SLOT_ENABLED_COUNT; i++)
         if (g_skylanders[i].loaded && g_skylanders[i].active) s |= (1 << i);
     return s;
 }
 
 uint8_t *skylander_get_block(uint8_t slot, uint8_t block) {
-    if (slot >= MAX_SKYLANDERS || !g_skylanders[slot].loaded) return NULL;
+    if (slot >= PORTAL_SLOT_ENABLED_COUNT || !g_skylanders[slot].loaded) return NULL;
     if (block >= SKYLANDER_DUMP_SIZE / 16) return NULL;
     return &g_skylanders[slot].data[block * 16];
 }
 
 void skylander_write_block(uint8_t slot, uint8_t block, const uint8_t *data) {
-    if (slot >= MAX_SKYLANDERS || !g_skylanders[slot].loaded) return;
+    if (slot >= PORTAL_SLOT_ENABLED_COUNT || !g_skylanders[slot].loaded) return;
     if (block >= SKYLANDER_DUMP_SIZE / 16) return;
     memcpy(&g_skylanders[slot].data[block * 16], data, 16);
+}
+
+bool skylander_path_loaded_in_any_enabled_slot(const char *path, int *slot_out) {
+    if (slot_out) *slot_out = -1;
+    if (!path || !path[0]) return false;
+    for (int slot = 0; slot < PORTAL_SLOT_ENABLED_COUNT; slot++) {
+        if (g_skylanders[slot].loaded &&
+            strcmp(g_skylanders[slot].filename, path) == 0) {
+            if (slot_out) *slot_out = slot;
+            return true;
+        }
+    }
+    return false;
 }

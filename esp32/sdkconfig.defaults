@@ -4,6 +4,8 @@ CONFIG_IDF_TARGET="esp32"
 # SPIFFS for storing Skylander dump files in flash
 CONFIG_SPIFFS_USE_MAGIC=y
 CONFIG_SPIFFS_USE_MAGIC_LENGTH=y
+# Preserve the requested /spiffs/skylandersDumps/... hierarchy in the image.
+CONFIG_SPIFFS_OBJ_NAME_LEN=96
 
 # Main task stack
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
@@ -15,7 +17,6 @@ CONFIG_ESP_WIFI_ENABLED=y
 # HTTP server — larger buffer for file uploads (1KB dumps + multipart overhead)
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_HTTPD_MAX_URI_LEN=512
-CONFIG_HTTPD_CONN_CLOSE_HEADER=y
 CONFIG_HTTPD_WS_SUPPORT=n
 
 # NVS (needed by WiFi + portal type persistence)

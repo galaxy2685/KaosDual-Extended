@@ -1,0 +1,45 @@
+# ESP-IDF and Pico build output
+esp32/build/
+esp32/build-*/
+pico/build/
+pico/build-*/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/compile_commands.json
+
+# Firmware images, linker output, monitor/compiler logs
+*.bin
+*.elf
+*.uf2
+*.map
+*.log
+monitor*.txt
+
+# ESP-IDF generated or local configuration
+esp32/sdkconfig.old
+sdkconfig.old
+
+# Private Skylander libraries and runtime save data
+esp32/skylandersDumps/**/*.sky
+esp32/skylandersDumps/**/*.sky.bak
+esp32/skylandersDumps/**/*.sky.tmp
+esp32/userDumps/
+**/userDumps/
+*.sky
+*.sky.bak
+*.sky.tmp
+skylander_index.json
+favourites.json
+library_favourites.json
+spiffs.bin
+
+# Editor and OS state
+.vscode/
+.idea/
+*.code-workspace
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+Desktop.ini
