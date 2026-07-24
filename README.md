@@ -1,5 +1,8 @@
 # KaosDual Extended
 
+https://github.com/user-attachments/assets/cf1b49d7-7597-4e4a-8cf8-fbe9b376d659
+
+
 ## 1. Project title and summary
 
 KaosDual Extended is an extended community fork of [KaosDual](https://github.com/minecraftGman/KaosDual), focused on simple hardware, an integrated Skylander library, four-slot support, and safe save inspection/editing. It is not an official, definitive, or replacement version of KaosDual.
