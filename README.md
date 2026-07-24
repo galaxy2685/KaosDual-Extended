@@ -32,7 +32,7 @@ Editing is deliberately narrow: Traps, Vehicles, Creation Crystals, Items, Adven
 - A Windows PC for the steps below.
 - Optional: a PCF8574 LCD1602 I²C display. It is not required to use the WebUI.
 
-![ESP32 and Raspberry Pi Pico wiring diagram](images/wiring.png)
+![ESP32 and Raspberry Pi Pico wiring diagram](docs/images/wiring.png)
 
 See [Hardware Needed](docs/01%20Hardware%20Needed.md) and [Wiring](docs/02%20Wiring.md). UART is 3.3 V logic: do not connect either UART pin to a 5 V TTL signal, and always connect the boards’ grounds.
 
