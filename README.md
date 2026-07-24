@@ -27,10 +27,12 @@ Editing is deliberately narrow: Traps, Vehicles, Creation Crystals, Items, Adven
 
 - An **ESP32 DevKit V1-class ESP32 board with 4 MB flash** (the supplied partition table targets a 4 MB ESP32).
 - A Raspberry Pi Pico. The repository also has a local board definition for Waveshare RP2040-Zero.
-- Three jumper wires for UART and ground.
+- four jumper wires for UART, ground and 5v.
 - Suitable data-capable USB cables: one for the ESP32 and one for the Pico/console or PC.
 - A Windows PC for the steps below.
 - Optional: a PCF8574 LCD1602 I²C display. It is not required to use the WebUI.
+
+![ESP32 and Raspberry Pi Pico wiring diagram](images/wiring.png)
 
 See [Hardware Needed](docs/01%20Hardware%20Needed.md) and [Wiring](docs/02%20Wiring.md). UART is 3.3 V logic: do not connect either UART pin to a 5 V TTL signal, and always connect the boards’ grounds.
 

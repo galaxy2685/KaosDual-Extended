@@ -11,6 +11,8 @@
 
 These are the pins configured in `esp32/main/pico_bridge.c` and `pico/main.c`; UART speed is 921600 baud. TX and RX must be crossed. Both UARTs use 3.3 V logic—never attach them directly to 5 V TTL signals.
 
+![ESP32 and Raspberry Pi Pico wiring diagram](images/wiring.png)
+
 ## Optional LCD1602 with PCF8574 backpack
 
 | LCD signal | ESP32 GPIO |
