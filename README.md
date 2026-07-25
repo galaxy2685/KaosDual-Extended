@@ -2,9 +2,10 @@
 
 https://github.com/user-attachments/assets/cf1b49d7-7597-4e4a-8cf8-fbe9b376d659
 
+##Transparency Notice
+This fork was developed with extensive assistance from AI tools. I do not claim sole authorship of the code or documentation. Full credit for the original projects and upstream code belongs to their respective authors, as listed in [CREDITS.md](CREDITS.md). My role was testing, directing the changes, validating the hardware and firmware, and maintaining this fork.
 
 ## 1. Project title and summary
-
 KaosDual Extended is an extended community fork of [KaosDual](https://github.com/minecraftGman/KaosDual), focused on simple hardware, an integrated Skylander library, four-slot support, and safe save inspection/editing. It is not an official, definitive, or replacement version of KaosDual.
 
 Upstream KaosDual is credited to [minecraftGman](https://github.com/minecraftGman). It is based on the original [KAOS project](https://github.com/NicoAICP/KAOS). See [CREDITS.md](CREDITS.md) for detail.
