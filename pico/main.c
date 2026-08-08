@@ -40,7 +40,9 @@ static uint8_t load_portal_type(void) {
         uint8_t t = (uint8_t)watchdog_hw->scratch[5];
         if (t <= 3) return t;
     }
-    return 2; /* default: Trap Team */
+    /* SSA's original PS3 USB handling is the least tolerant of a device
+     * rebooting after enumeration, so present that identity on a cold boot. */
+    return 0;
 }
 
 static void save_and_reboot(uint8_t type) {
@@ -238,7 +240,7 @@ static void handle_command(const uint8_t *cmd) {
         resp[0] = 0x41;
         resp[1] = cmd[1];
         resp[2] = 0xFF;
-        resp[3] = 0x00;
+        resp[3] = 0x77;
         {
             static uint8_t last_a = 0xFF;
             if (cmd[1] != last_a) {
@@ -625,7 +627,7 @@ int main(void) {
             save_and_reboot(g_pending_type);
         }
 
-        /* Status at 50Hz — always, not gated on g_portal_active */
+        /* Status at 50Hz after the portal has received R/A activation. */
         if (tud_hid_ready()) {
             uint8_t resp[REPORT_LEN];
             bool sent = false;
@@ -637,7 +639,7 @@ int main(void) {
             }
 
             uint32_t now = to_ms_since_boot(get_absolute_time());
-            if (!sent && (now - last_status_ms >= 20)) {
+            if (!sent && g_portal_active && (now - last_status_ms >= 20)) {
                 build_status(resp);
                 tud_hid_report(0, resp, REPORT_LEN);
                 last_status_ms = now;
